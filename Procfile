@@ -1,0 +1,1 @@
+web: gunicorn ali_backend.wsgi
