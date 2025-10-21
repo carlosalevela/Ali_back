@@ -14,6 +14,11 @@ from pathlib import Path
 from datetime import timedelta
 import os
 from decouple import config, Csv
+import dj_database_url
+from dotenv import load_dotenv
+
+
+load_dotenv()
 
 
 GROQ_API_KEY = config('GROQ_API_KEY', default='', cast=str)
@@ -112,14 +117,7 @@ WSGI_APPLICATION = 'ali_backend.wsgi.application'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'psicoorientacion_bd',  # Nombre de la base de datos (igual)
-        'USER': 'postgres',                 # Usuario de PostgreSQL (puede ser 'postgres' si usas el default)
-        'PASSWORD': 'Volcano21!',       # Misma contraseña
-        'HOST': 'localhost',            # O IP del servidor
-        'PORT': '5432',                 # Puerto por defecto de PostgreSQL
-    }
+    'default': dj_database_url.config(default=os.getenv('DATABASE_URL'))
 }
 
 
