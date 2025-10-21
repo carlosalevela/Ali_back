@@ -1,1 +1,1 @@
-web: gunicorn ali_backend.wsgi
+web: python manage.py collectstatic && gunicorn ali_backend.wsgi
