@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'whitenoise.runserver_nostatic',
     'Usuario',
     'rest_framework',
     'rest_framework.authtoken',
@@ -73,6 +74,7 @@ CORS_ALLOW_ALL_ORIGINS = True
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -185,3 +187,10 @@ FRONTEND_RESET_URL = config('FRONTEND_RESET_URL', default='')
 PASSWORD_RESET_TIMEOUT = config('PASSWORD_RESET_TIMEOUT', default=86400, cast=int)
 
 FRONTEND_RESET_PATH = "/recuperacion/contrasena-confirmada"
+
+STORAGES = {
+    # ...
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
