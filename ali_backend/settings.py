@@ -16,7 +16,7 @@ import os
 from decouple import config, Csv
 
 
-GROQ_API_KEY = config('GROQ_API_KEY')
+GROQ_API_KEY = config('GROQ_API_KEY', default='', cast=str)
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
