@@ -34,6 +34,8 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['localhost','web-production-fada9.up.railway.app']
 
+CSRF_TRUSTED_ORIGINS = ['http://*','https://web-production-fada9.up.railway.app']
+
 
 # Application definition
 
