@@ -39,7 +39,7 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['localhost','web-production-fada9.up.railway.app']
 
-CSRF_TRUSTED_ORIGINS = ['http://*','https://web-production-fada9.up.railway.app']
+CSRF_TRUSTED_ORIGINS = ['http://*','https://web-production-fada9.up.railway.app', 'https://ali-front-three.vercel.app']
 
 
 # Application definition
@@ -77,7 +77,10 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
 }
 
-CORS_ALLOW_ALL_ORIGINS = True 
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGINS = [
+    'https://ali-front-three.vercel.app',
+]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
