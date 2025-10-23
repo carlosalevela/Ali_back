@@ -1,1 +1,1 @@
-web: python manage.py collectstatic && gunicorn ali_backend.wsgi
+web: python manage.py collectstatic --noinput && gunicorn ali_backend.wsgi:application --bind 0.0.0.0:$PORT --timeout 120 --workers 2
