@@ -39,7 +39,7 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['localhost','web-production-fada9.up.railway.app','127.0.0.1']
 
-CSRF_TRUSTED_ORIGINS = ['http://*','https://web-production-fada9.up.railway.app', 'https://ali-front-three.vercel.app']
+CSRF_TRUSTED_ORIGINS = ['https://web-production-fada9.up.railway.app', 'https://ali-front-three.vercel.app']
 
 CSRF_COOKIE_SECURE = True
 CSRF_COOKIE_SAMESITE = 'None'
@@ -111,9 +111,9 @@ CORS_ALLOW_HEADERS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
