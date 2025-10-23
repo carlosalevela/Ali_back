@@ -224,3 +224,5 @@ STORAGES = {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
+
+RESEND_API_KEY = config('RESEND_API_KEY', default='')
