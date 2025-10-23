@@ -34,7 +34,7 @@ urlpatterns = [
     # GET (auth) / PUT/DELETE (admin) -> /Alipsicoorientadora/grados/<id>/
     path('grados/<int:pkid>/', GradeDetailAPI.as_view(), name='grado-detail'),
 
-    path('recuperacion/contraseña/', PasswordResetRequestView.as_view(), name='password-reset'),
+    path('recuperacion/contrasena/', PasswordResetRequestView.as_view(), name='password-reset'),
 
     path('recuperacion/contrasena-confirmada/', SetNewPasswordView.as_view(), name='password-reset-confirm'),
 ]
