@@ -12,7 +12,6 @@ from django.contrib.auth.tokens import PasswordResetTokenGenerator
 
 import logging
 from django.conf import settings
-from django.core.mail import EmailMultiAlternatives
 
 import resend
 from threading import Thread
@@ -264,7 +263,7 @@ class GradeDetailAPI(APIView):
 
 
 # ==========================
-#  RESET PASSWORD
+#  RESET PASSWORD (solo Resend)
 # ==========================
 class PasswordResetRequestView(APIView):
     """
@@ -287,48 +286,125 @@ class PasswordResetRequestView(APIView):
             logger.exception("Error buscando usuario por email")
             user = None
 
-        if not user:
-            # Siempre 200 para no filtrar si el correo existe
-            return Response(
-                {"detail": "Si el correo existe en nuestro sistema, enviaremos un enlace para restablecer la contraseña."},
-                status=status.HTTP_200_OK
-            )
+        if user:
+            # 3) Generar uid/token y armar el enlace
+            uidb64 = urlsafe_base64_encode(smart_bytes(user.pk))
+            token = token_generator.make_token(user)
 
-        # 3) Generar uid/token y armar el enlace (USANDO URL FIJA DE settings.FRONTEND_RESET_URL)
-        uidb64 = urlsafe_base64_encode(smart_bytes(user.pk))
-        token = token_generator.make_token(user)
+            base_url = getattr(settings, "FRONTEND_RESET_URL", "").rstrip("/")
+            reset_link = f"{base_url}?uid={uidb64}&token={token}" if base_url else f"/?uid={uidb64}&token={token}"
 
-        base_url = getattr(settings, "FRONTEND_RESET_URL", "").rstrip("/")
-        reset_link = f"{base_url}?uid={uidb64}&token={token}" if base_url else f"/?uid={uidb64}&token={token}"
+            # 4) Enviar email en segundo plano (NO BLOQUEA) con Resend
+            def _bg_send():
+                try:
+                    resend.api_key = getattr(settings, 'RESEND_API_KEY', '')
+                    if not resend.api_key:
+                        raise RuntimeError("RESEND_API_KEY no configurada en settings.")
 
-        # 4) Construir email (texto + HTML)
-        subject = "Recuperación de contraseña - ALI"
-        text = (
-            "Hola,\n\n"
-            "Recibimos una solicitud para restablecer tu contraseña.\n"
-            f"Usa este enlace:\n{reset_link}\n\n"
-            "Si no fuiste tú, ignora este correo."
-        )
-        html = f"""
-            <p>Hola,</p>
-            <p>Recibimos una solicitud para restablecer tu contraseña.</p>
-            <p><a href="{reset_link}" target="_blank">Haz clic aquí para restablecerla</a></p>
-            <p>Si no fuiste tú, ignora este correo.</p>
-        """
+                    nombre = getattr(user, "nombre", "") or ""
+                    subject = "Recuperación de contraseña - ALI"
 
-        # 5) Enviar (sin silenciar errores para ver el problema real en consola)
-        from_email = getattr(settings, "DEFAULT_FROM_EMAIL", None) or settings.EMAIL_HOST_USER
-        msg = EmailMultiAlternatives(subject, text, from_email, [email])
-        msg.attach_alternative(html, "text/html")
-        msg.send(fail_silently=False)
+                    text = (
+                        f"Hola{f' {nombre}' if nombre else ''},\n\n"
+                        "Recibimos una solicitud para restablecer tu contraseña en ALI.\n"
+                        f"Usa este enlace:\n{reset_link}\n\n"
+                        "Si no fuiste tú, ignora este correo."
+                    )
 
-        # 6) En DEBUG devolvemos datos útiles para pruebas
-        if settings.DEBUG:
-            return Response(
-                {"detail": "Correo enviado (DEBUG).", "uid": uidb64, "token": token, "reset_link": reset_link},
-                status=status.HTTP_200_OK
-            )
+                    html = f"""
+                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px 10px 0 0;">
+                                <h1 style="color: white; margin: 0; text-align: center;">ALI Orientadora</h1>
+                            </div>
+                            
+                            <div style="background: #ffffff; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 10px 10px;">
+                                <h2 style="color: #1f2937; margin-top: 0;">Recuperación de contraseña</h2>
+                                
+                                <p style="color: #4b5563; line-height: 1.6;">
+                                    Hola{f' {nombre}' if nombre else ''},
+                                </p>
+                                
+                                <p style="color: #4b5563; line-height: 1.6;">
+                                    Recibimos una solicitud para restablecer tu contraseña en ALI.
+                                </p>
+                                
+                                <div style="text-align: center; margin: 35px 0;">
+                                    <a href="{reset_link}" 
+                                       style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                                              color: white; 
+                                              padding: 14px 32px; 
+                                              text-decoration: none; 
+                                              border-radius: 8px; 
+                                              display: inline-block;
+                                              font-weight: bold;
+                                              box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+                                        Restablecer contraseña
+                                    </a>
+                                </div>
+                                
+                                <p style="color: #6b7280; font-size: 14px; line-height: 1.6;">
+                                    O copia y pega este enlace en tu navegador:
+                                </p>
+                                
+                                <p style="word-break: break-all; 
+                                          background: #f3f4f6; 
+                                          padding: 12px; 
+                                          border-radius: 6px; 
+                                          color: #4b5563;
+                                          font-size: 13px;">
+                                    {reset_link}
+                                </p>
+                                
+                                <div style="margin-top: 35px; 
+                                            padding-top: 20px; 
+                                            border-top: 2px solid #e5e7eb;">
+                                    <p style="color: #9ca3af; font-size: 13px; line-height: 1.6; margin: 0;">
+                                        ⏰ Este enlace expirará en 24 horas por seguridad.
+                                    </p>
+                                    <p style="color: #9ca3af; font-size: 13px; line-height: 1.6; margin: 10px 0 0 0;">
+                                        🔒 Si no solicitaste este cambio, puedes ignorar este mensaje.
+                                    </p>
+                                </div>
+                            </div>
+                            
+                            <div style="text-align: center; margin-top: 20px;">
+                                <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+                                    © 2025 ALI Orientadora - Todos los derechos reservados
+                                </p>
+                            </div>
+                        </div>
+                    """
 
+                    sender = getattr(settings, 'RESEND_FROM_EMAIL', None) or "ALI Orientadora <onboarding@resend.dev>"
+                    params = {
+                        "from": sender,
+                        "to": [email],
+                        "subject": subject,
+                        "html": html,
+                        "text": text,
+                    }
+                    resp = resend.Emails.send(params)
+                    logger.info(f"✅ Email de recuperación enviado a {email} con Resend. Resp: {resp}")
+
+                except Exception as e:
+                    logger.exception("❌ Error enviando email con Resend a %s: %s", email, e)
+
+            thread = Thread(target=_bg_send, daemon=True)
+            thread.start()
+
+            # 5) En DEBUG devolvemos datos útiles para pruebas
+            if settings.DEBUG:
+                return Response(
+                    {
+                        "detail": "Correo enviado (DEBUG).",
+                        "uid": uidb64,
+                        "token": token,
+                        "reset_link": reset_link
+                    },
+                    status=status.HTTP_200_OK
+                )
+
+        # 6) Siempre respuesta genérica (seguridad)
         return Response(
             {"detail": "Si el correo existe en nuestro sistema, enviaremos un enlace para restablecer la contraseña."},
             status=status.HTTP_200_OK
@@ -364,144 +440,3 @@ class SetNewPasswordView(APIView):
         user.set_password(new_password)
         user.save()
         return Response({"detail": "Contraseña actualizada correctamente."}, status=status.HTTP_200_OK)
-
-# ==========================
-#  RESET PASSWORD CON RESEND
-# ==========================
-class PasswordResetRequestView(APIView):
-    """
-    POST /auth/password-reset/
-    body: { "email": "usuario@correo.com" }
-    """
-    authentication_classes = []
-    permission_classes = []
-
-    def post(self, request):
-        # 1) Validar entrada
-        serializer = PasswordResetRequestSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        email = serializer.validated_data["email"].strip()
-
-        # 2) Buscar usuario (sin revelar existencia)
-        try:
-            user = User.objects.filter(email__iexact=email, is_active=True).first()
-        except Exception:
-            logger.exception("Error buscando usuario por email")
-            user = None
-
-        if user:
-            # 3) Generar uid/token y armar el enlace
-            uidb64 = urlsafe_base64_encode(smart_bytes(user.pk))
-            token = token_generator.make_token(user)
-
-            base_url = getattr(settings, "FRONTEND_RESET_URL", "").rstrip("/")
-            reset_link = f"{base_url}?uid={uidb64}&token={token}" if base_url else f"/?uid={uidb64}&token={token}"
-
-            # 4) Enviar email en segundo plano (NO BLOQUEA)
-            thread = Thread(
-                target=self._send_reset_email_with_resend,
-                args=(email, reset_link, user)
-            )
-            thread.daemon = True
-            thread.start()
-
-            # 5) En DEBUG devolvemos datos útiles para pruebas
-            if settings.DEBUG:
-                return Response(
-                    {
-                        "detail": "Correo enviado (DEBUG).", 
-                        "uid": uidb64, 
-                        "token": token, 
-                        "reset_link": reset_link
-                    },
-                    status=status.HTTP_200_OK
-                )
-
-        # 6) Siempre respuesta genérica (seguridad)
-        return Response(
-            {"detail": "Si el correo existe en nuestro sistema, enviaremos un enlace para restablecer la contraseña."},
-            status=status.HTTP_200_OK
-        )
-
-    def _send_reset_email_with_resend(self, email, reset_link, user):
-        """Envía el email de recuperación usando Resend"""
-        try:
-            # Configurar API key
-            resend.api_key = getattr(settings, 'RESEND_API_KEY', '')
-            
-            # Preparar el email
-            params = {
-                "from": "ALI Orientadora <onboarding@resend.dev>",  # Email de prueba de Resend
-                "to": [email],
-                "subject": "Recuperación de contraseña - ALI",
-                "html": f"""
-                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-                        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px 10px 0 0;">
-                            <h1 style="color: white; margin: 0; text-align: center;">ALI Orientadora</h1>
-                        </div>
-                        
-                        <div style="background: #ffffff; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 10px 10px;">
-                            <h2 style="color: #1f2937; margin-top: 0;">Recuperación de contraseña</h2>
-                            
-                            <p style="color: #4b5563; line-height: 1.6;">
-                                Hola {user.nombre if hasattr(user, 'nombre') else ''},
-                            </p>
-                            
-                            <p style="color: #4b5563; line-height: 1.6;">
-                                Recibimos una solicitud para restablecer tu contraseña en ALI.
-                            </p>
-                            
-                            <div style="text-align: center; margin: 35px 0;">
-                                <a href="{reset_link}" 
-                                   style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                                          color: white; 
-                                          padding: 14px 32px; 
-                                          text-decoration: none; 
-                                          border-radius: 8px; 
-                                          display: inline-block;
-                                          font-weight: bold;
-                                          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
-                                    Restablecer contraseña
-                                </a>
-                            </div>
-                            
-                            <p style="color: #6b7280; font-size: 14px; line-height: 1.6;">
-                                O copia y pega este enlace en tu navegador:
-                            </p>
-                            
-                            <p style="word-break: break-all; 
-                                      background: #f3f4f6; 
-                                      padding: 12px; 
-                                      border-radius: 6px; 
-                                      color: #4b5563;
-                                      font-size: 13px;">
-                                {reset_link}
-                            </p>
-                            
-                            <div style="margin-top: 35px; 
-                                        padding-top: 20px; 
-                                        border-top: 2px solid #e5e7eb;">
-                                <p style="color: #9ca3af; font-size: 13px; line-height: 1.6; margin: 0;">
-                                    ⏰ Este enlace expirará en 24 horas por seguridad.
-                                </p>
-                                <p style="color: #9ca3af; font-size: 13px; line-height: 1.6; margin: 10px 0 0 0;">
-                                    🔒 Si no solicitaste este cambio, puedes ignorar este mensaje de forma segura.
-                                </p>
-                            </div>
-                        </div>
-                        
-                        <div style="text-align: center; margin-top: 20px;">
-                            <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-                                © 2025 ALI Orientadora - Todos los derechos reservados
-                            </p>
-                        </div>
-                    </div>
-                """
-            }
-            
-            # Enviar con Resend
-            email_response = resend.Emails.send(params)
-            logger.info(f"✅ Email de recuperación enviado a {email} con Resend. ID: {email_response}")
-            
-        except Exception as e:
-            logger.error(f"❌ Error enviando email con Resend a {email}: {str(e)}")
