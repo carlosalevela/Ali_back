@@ -4,14 +4,14 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.db import transaction
 from rest_framework.views import APIView
-from rest_framework import status, viewsets
+from rest_framework import status, viewsets, generics, permissions
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied  # ← ADD
 
-from .models import TestGrado9
-from .serializers import TestGrado9Serializer
+from .models import TestGrado9, TestGrado9Top3
+from .serializers import TestGrado9Serializer, TestGrado9Top3Serializer
 from .groq_service import generar_explicacion_modalidad
 
 # ⬇️ Modelo nuevo (57 preguntas + metas)
@@ -126,6 +126,33 @@ def _finalizar_y_predecir(test_instance: TestGrado9):
     test_instance.estado = TestGrado9.ESTADO_FINALIZADO
     test_instance.fecha_realizacion = timezone.now()
     test_instance.save(update_fields=['resultado', 'estado', 'fecha_realizacion', 'fecha_ultima_actividad'])
+
+# ✅ NUEVO: helper para reportar faltantes/invalidas
+def _faltantes_o_invalidas(respuestas_dict: dict):
+    """
+    Devuelve (faltantes:list[int], invalidas:list[int]).
+    - faltantes: preguntas sin respuesta.
+    - invalidas: respondidas pero con valor fuera de RESP_VALIDAS/A-B-C.
+    """
+    faltantes = []
+    invalidas = []
+
+    if not isinstance(respuestas_dict, dict):
+        return list(range(1, TOTAL_PREGUNTAS + 1)), invalidas
+
+    for i in range(1, TOTAL_PREGUNTAS + 1):
+        key = f"pregunta_{i}"
+        r = respuestas_dict.get(key)
+        if r is None or str(r).strip() == "":
+            faltantes.append(i)
+            continue
+        r2 = str(r).strip()
+        if r2 in MAP_A_B_C:
+            r2 = MAP_A_B_C[r2]
+        if r2 not in RESP_VALIDAS:
+            invalidas.append(i)
+
+    return faltantes, invalidas
 
 # ================== ViewSet principal ==================
 class TestGrado9ViewSet(viewsets.ModelViewSet):
@@ -282,8 +309,9 @@ class TestGrado9ViewSet(viewsets.ModelViewSet):
             else:
                 test.ultima_pregunta = _ultima_pregunta(respuestas)
 
-            # estado según completitud
-            if test.respondidas >= TOTAL_PREGUNTAS:
+            # ✅ Validar completitud/validez ANTES de marcar estado
+            respuestas_norm = _normalizar_respuestas(respuestas)
+            if respuestas_norm is not None and test.respondidas >= TOTAL_PREGUNTAS:
                 test.estado = TestGrado9.ESTADO_FINALIZADO
             else:
                 test.estado = TestGrado9.ESTADO_EN_PROGRESO
@@ -307,6 +335,47 @@ class TestGrado9ViewSet(viewsets.ModelViewSet):
             "ultima_pregunta": test.ultima_pregunta,
             "fecha_ultima_actividad": test.fecha_ultima_actividad,
         }, status=200)
+
+    # ✅ NUEVO: endpoint explícito para finalizar
+    @action(detail=True, methods=['post'], url_path='finalizar')
+    def finalizar(self, request, pk=None):
+        """
+        Finaliza explícitamente el test:
+        - Si faltan/son inválidas respuestas → 400 con detalle.
+        - Si todo ok → finaliza, predice y devuelve 200 con el test.
+        """
+        user = request.user
+        try:
+            test = TestGrado9.objects.get(pk=pk)
+        except TestGrado9.DoesNotExist:
+            return Response({"error": "Test no existe."}, status=status.HTTP_404_NOT_FOUND)
+
+        if not (user.is_staff or user.is_superuser or test.usuario_id == user.id):
+            return Response({"error": "No tienes permiso para finalizar este test."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        if test.estado == TestGrado9.ESTADO_FINALIZADO:
+            return Response({"error": "El test ya está finalizado."}, status=status.HTTP_400_BAD_REQUEST)
+
+        faltantes, invalidas = _faltantes_o_invalidas(test.respuestas or {})
+        if faltantes or invalidas:
+            partes = []
+            if faltantes:
+                partes.append(f"faltan {len(faltantes)} pregunta(s): {faltantes}")
+            if invalidas:
+                partes.append(f"hay respuestas inválidas en: {invalidas} (usa Me encanta / Me interesa / No me gusta o A/B/C)")
+            return Response({"error": "No puedes finalizar: " + " y ".join(partes)},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # Si todo está completo y válido, finalizamos y predecimos
+        try:
+            _finalizar_y_predecir(test)
+        except Exception as e:
+            test.resultado = f"Error interno: {str(e)}"
+            test.save(update_fields=['resultado'])
+            return Response({"error": test.resultado}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response(TestGrado9Serializer(test).data, status=status.HTTP_200_OK)
 
 # ----------------- APIViews existentes -----------------
 class ResultadoTest9PorIDView(APIView):
@@ -359,3 +428,23 @@ class FiltroPorTecnicoView(APIView):
         tests_filtrados = TestGrado9.objects.filter(resultado__icontains=tecnico).order_by("-fecha_realizacion")
         serializer = TestGrado9Serializer(tests_filtrados, many=True)
         return Response(serializer.data)
+
+# ================================
+# NUEVO: Endpoints para Top 3 (crear y listar admin)
+# ================================
+class TestGrado9Top3CreateView(generics.CreateAPIView):
+    """
+    Crea un registro de Top 3 para el usuario autenticado.
+    Body esperado: {"selecciones": ["A","B","C"], "test": <id opcional>}
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = TestGrado9Top3Serializer
+    queryset = TestGrado9Top3.objects.all()
+
+class TestGrado9Top3ListAdminView(generics.ListAPIView):
+    """
+    Lista Top 3 (solo administradores).
+    """
+    permission_classes = [permissions.IsAdminUser]
+    serializer_class = TestGrado9Top3Serializer
+    queryset = TestGrado9Top3.objects.select_related('usuario', 'test').all()

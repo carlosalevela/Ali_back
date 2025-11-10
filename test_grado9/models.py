@@ -2,6 +2,8 @@ from django.db import models
 from django.conf import settings
 from django.utils import timezone
 import json
+# 👇 NUEVO: para ArrayField (PostgreSQL)
+from django.contrib.postgres.fields import ArrayField
 
 # Campo JSON tolerante: si ya viene dict/list desde Postgres, no lo vuelve a cargar.
 class PassthroughJSONField(models.JSONField):
@@ -54,3 +56,41 @@ class TestGrado9(models.Model):
     def progreso_pct(self) -> float:
         total = 57
         return round((self.respondidas / total) * 100, 2)
+
+
+# ================================
+# NUEVO: Tabla para la pregunta inicial (Top 3)
+# ================================
+class TestGrado9Top3(models.Model):
+    """
+    Guarda exclusivamente la pregunta inicial de selección múltiple (Top 3)
+    sin afectar el scoring del TestGrado9.
+    """
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='grado9_top3'
+    )
+    # exactamente 3 selecciones (catálogo controlado desde serializer)
+    selecciones = ArrayField(models.CharField(max_length=80), size=3)
+
+    # opcional: referenciar un TestGrado9 específico si se desea asociar el top3 a un intento concreto
+    test = models.ForeignKey(
+        TestGrado9,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='top3_inicial'
+    )
+
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Top 3 inicial (Grado 9)'
+        verbose_name_plural = 'Top 3 inicial (Grado 9)'
+        ordering = ['-creado_en']
+
+    def __str__(self):
+        try:
+            return f'Top3 {self.usuario_id}: {", ".join(self.selecciones or [])}'
+        except Exception:
+            return f'Top3 {self.usuario_id}'
