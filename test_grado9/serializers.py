@@ -55,7 +55,7 @@ ALLOWED_MODALIDADES = {
     'Electricidad y Electrónica',
     'Robótica',
     'Agroindustria',
-    'Academico',
+    'Académico',
     'Primera Infancia',
     'Seguridad y Salud en el Trabajo',
     'Promoción de la Salud',
