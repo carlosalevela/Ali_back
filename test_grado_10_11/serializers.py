@@ -23,6 +23,6 @@ class TestGrado10_11Serializer(serializers.ModelSerializer):
     def get_progreso_pct(self, obj: TestGrado10_11) -> float:
         try:
             # Si el modelo tiene @property progreso_pct lo usamos; si no, lo calculamos aquí.
-            return getattr(obj, 'progreso_pct', None) or round((obj.respondidas / 40) * 100, 2)
+            return getattr(obj, 'progreso_pct', None) or round((obj.respondidas / 60) * 100, 2)
         except Exception:
             return 0.0

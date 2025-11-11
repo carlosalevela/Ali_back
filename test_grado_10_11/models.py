@@ -50,7 +50,7 @@ class TestGrado10_11(models.Model):
 
     @property
     def progreso_pct(self) -> float:
-        total = 40  # ajusta si tu test tiene otro total
+        total = 60  # ajusta si tu test tiene otro total
         if not self.respondidas:
             return 0.0
         return round((self.respondidas / total) * 100, 2)

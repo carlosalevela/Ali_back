@@ -5,14 +5,18 @@ import joblib
 import numpy as np
 import pandas as pd
 
+
 # ========= Rutas base (sin extensión) =========
-BASE = os.path.join(os.path.dirname(__file__), "modelo_10y11_rf")
+BASE = os.path.join(os.path.dirname(__file__), "modelo_10y11_rf_60preguntas")
+
 
 # ========= Cargar modelo =========
 MODEL = joblib.load(f"{BASE}.pkl")  # RandomForestClassifier puro
 
+
 # ========= Cargar y LIMPIAR XCOLS =========
 _raw_xcols = pd.read_csv(f"{BASE}_xcols.csv", header=None).iloc[:, 0].tolist()
+
 
 XCOLS = []
 for c in _raw_xcols:
@@ -23,13 +27,15 @@ for c in _raw_xcols:
         continue
     XCOLS.append(c)
 
-# Solo permitimos preguntas 1..40 y sumas conocidas
-VALID_COLS = [f"pregunta_{i}" for i in range(1, 41)]
+
+# Solo permitimos preguntas 1..60 y sumas conocidas
+VALID_COLS = [f"pregunta_{i}" for i in range(1, 61)]  # ✅ Cambio 41 -> 61
 VALID_COLS += [f"suma_{k}" for k in [
     "Medicina", "Ingeniería", "Administración", "Psicología", "Derecho",
     "Educación", "Sistemas/Software", "Contaduría", "Diseño Gráfico", "Ciencias Naturales"
 ]]
 XCOLS = [c for c in XCOLS if c in VALID_COLS]
+
 
 # Asegurar tamaño que el modelo espera
 if hasattr(MODEL, "n_features_in_"):
@@ -43,6 +49,7 @@ if hasattr(MODEL, "n_features_in_"):
             f"Revisa el CSV {BASE}_xcols.csv."
         )
 
+
 # ========= Cargar mapping id -> nombre (limpieza robusta) =========
 _id_to_nombre_series = pd.read_csv(f"{BASE}_id_to_nombre.csv", index_col=0, header=None).iloc[:, 0]
 # filtrar claves NaN / inválidas, castear a int
@@ -55,32 +62,37 @@ for k, v in _id_to_nombre_series.items():
     except Exception:
         continue
 
+
 # ========= Bloques de preguntas (para meta-features) =========
+# ✅ Actualizado a 6 preguntas por carrera (60 total)
 PREGUNTAS_CLAVE_POR_CARRERA = {
-    "Medicina": list(range(1, 5)),
-    "Ingeniería": list(range(5, 9)),
-    "Administración": list(range(9, 13)),
-    "Psicología": list(range(13, 17)),
-    "Derecho": list(range(17, 21)),
-    "Educación": list(range(21, 25)),
-    "Sistemas/Software": list(range(25, 29)),
-    "Contaduría": list(range(29, 33)),
-    "Diseño Gráfico": list(range(33, 37)),
-    "Ciencias Naturales": list(range(37, 41)),
+    "Medicina": list(range(1, 7)),             # 1-6
+    "Ingeniería": list(range(7, 13)),          # 7-12
+    "Administración": list(range(13, 19)),     # 13-18
+    "Psicología": list(range(19, 25)),         # 19-24
+    "Derecho": list(range(25, 31)),            # 25-30
+    "Educación": list(range(31, 37)),          # 31-36
+    "Sistemas/Software": list(range(37, 43)),  # 37-42
+    "Contaduría": list(range(43, 49)),         # 43-48
+    "Diseño Gráfico": list(range(49, 55)),     # 49-54
+    "Ciencias Naturales": list(range(55, 61)), # 55-60
 }
+
 
 # ========= Normalización de respuestas =========
 MAP_ABCPAL = {"A": "Me encanta", "B": "Me interesa", "C": "No me gusta"}
 MAP_321 = {"Me encanta": 3, "Me interesa": 2, "No me gusta": 1}
 VALIDAS = set(MAP_321.keys())
 
+
 def _normalizar_lista(respuestas_texto):
     """
-    Acepta lista de 40 respuestas (texto o A/B/C) y devuelve
-    lista de 40 strings en {'Me encanta','Me interesa','No me gusta'}.
+    Acepta lista de 60 respuestas (texto o A/B/C) y devuelve
+    lista de 60 strings en {'Me encanta','Me interesa','No me gusta'}.
     """
-    if not isinstance(respuestas_texto, (list, tuple)) or len(respuestas_texto) != 40:
-        raise ValueError("Se esperaban 40 respuestas en orden (1..40).")
+    # ✅ Cambio 40 -> 60
+    if not isinstance(respuestas_texto, (list, tuple)) or len(respuestas_texto) != 60:
+        raise ValueError("Se esperaban 60 respuestas en orden (1..60).")
     out = []
     for r in respuestas_texto:
         r = str(r).strip()
@@ -90,6 +102,7 @@ def _normalizar_lista(respuestas_texto):
         out.append(r)
     return out
 
+
 def _vectorizar(respuestas_texto):
     """
     Convierte respuestas -> vector np.ndarray shape (1, n_features)
@@ -97,13 +110,16 @@ def _vectorizar(respuestas_texto):
     """
     resp = _normalizar_lista(respuestas_texto)
     base = [MAP_321[r] for r in resp]
-    s = pd.Series(base, index=[f"pregunta_{i}" for i in range(1, 41)])
+    # ✅ Cambio range(1,41) -> range(1,61)
+    s = pd.Series(base, index=[f"pregunta_{i}" for i in range(1, 61)])
+
 
     # Agregar meta-features si el modelo las usa (solo si están en XCOLS)
     for carrera, qs in PREGUNTAS_CLAVE_POR_CARRERA.items():
         col = f"suma_{carrera}"
         if col in XCOLS:
             s[col] = s[[f"pregunta_{i}" for i in qs]].sum()
+
 
     # Reordenar exactamente como XCOLS
     s = s.reindex(XCOLS)
@@ -120,6 +136,7 @@ def _vectorizar(respuestas_texto):
         )
     return arr
 
+
 def _ids_a_nombres(ids):
     """
     Convierte ids de clase -> nombres de carrera usando ID_TO_NOMBRE.
@@ -135,6 +152,7 @@ def _ids_a_nombres(ids):
             nombres.append(str(cid))
     return nombres
 
+
 def predecir_carrera(respuestas_texto, top_k: int = 3):
     """
     Retorna:
@@ -148,6 +166,7 @@ def predecir_carrera(respuestas_texto, top_k: int = 3):
     # Índices ordenados por prob. descendente (en el espacio de MODEL.classes_)
     idx_sorted = np.argsort(proba)[::-1]
 
+
     # Mapear classes_ del modelo a nombres
     if hasattr(MODEL, "classes_"):
         class_ids = list(MODEL.classes_)  # p.ej. [1,2,3,...,10]
@@ -155,8 +174,10 @@ def predecir_carrera(respuestas_texto, top_k: int = 3):
         # fallback (siempre debería existir en RF)
         class_ids = list(range(1, len(proba) + 1))
 
+
     ids_ordenados = [class_ids[i] for i in idx_sorted]
     nombres_ordenados = _ids_a_nombres(ids_ordenados)
+
 
     top_k = max(1, min(top_k, len(nombres_ordenados)))
     return {
